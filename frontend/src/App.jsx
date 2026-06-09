@@ -1,13 +1,12 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { CartProvider } from './context/CartContext'
 import Header from './components/Header'
 import CategoryChips from './components/CategoryChips'
 import HeroCarousel from './components/HeroCarousel'
 import ProductCard from './components/ProductCard'
 import CartDrawer from './components/CartDrawer'
-import { PRODUCTS } from './data/products'
 
-function HomeView({products, onSelectCategory, onOpenCart, onSearch}){
+function HomeView({products}){
   return (
     <div>
       <HeroCarousel />
@@ -33,7 +32,7 @@ function HomeView({products, onSelectCategory, onOpenCart, onSearch}){
   )
 }
 
-function ResultsView({items, onFilter}){
+function ResultsView({items}){
   return (
     <div>
       <div className="filtered-controls">
@@ -54,13 +53,44 @@ export default function App(){
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState(null)
   const [openCart, setOpenCart] = useState(false)
+  const [products, setProducts] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
 
-  const products = useMemo(()=> {
-    let res = PRODUCTS
-    if(category) res = res.filter(p=> p.category === category)
-    if(query) res = res.filter(p=> p.name.toLowerCase().includes(query.toLowerCase()))
-    return res
-  },[category, query])
+  useEffect(() => {
+    const controller = new AbortController()
+    const fetchProducts = async () => {
+      setLoading(true)
+      setError(null)
+
+      try {
+        const params = new URLSearchParams()
+        if (category) params.append('category', category)
+        if (query) params.append('q', query)
+
+        const url = `http://localhost:8001/products?${params.toString()}`
+        const response = await fetch(url, { signal: controller.signal })
+
+        if (!response.ok) {
+          throw new Error(`Failed to load products: ${response.status}`)
+        }
+
+        const data = await response.json()
+        setProducts(data.products || [])
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          setError(err.message)
+          setProducts([])
+        }
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchProducts()
+
+    return () => controller.abort()
+  }, [category, query])
 
   return (
     <CartProvider>
@@ -68,7 +98,11 @@ export default function App(){
         <Header onOpenCart={()=> setOpenCart(true)} onSearch={setQuery} />
         <CategoryChips onSelect={(c)=> setCategory(c)} active={category} />
         <div style={{padding:8}}>
-          {query || category ? (
+          {loading ? (
+            <div>Loading products...</div>
+          ) : error ? (
+            <div style={{color:'red'}}>Error loading products: {error}</div>
+          ) : query || category ? (
             <ResultsView items={products} />
           ) : (
             <HomeView products={products} />
